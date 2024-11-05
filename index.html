@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Transferências com Login</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js";
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCPuVpIRl6CA0TXHBZ8UJ9pra6JXVBIsvA",
+            authDomain: "pagamento-carro.firebaseapp.com",
+            projectId: "pagamento-carro",
+            storageBucket: "pagamento-carro.appspot.com",
+            messagingSenderId: "307108744491",
+            appId: "1:307108744491:web:452b76f74f0e871316496e",
+            measurementId: "G-N6E2DH37H1"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        const db = getFirestore(app);  // Inicializa o Firestore
+
+        // Usuários de exemplo
+        const users = {
+            admin: { password: "admin", role: "admin" },
+            fakedoi: { password: "fakedoi", role: "viewer" }
+        };
+
+        let currentUser = null;
+        const VALOR_DEVIDO = 25000;  // Valor total devido
+
+        // Funções globais
+        window.login = function() {
+            const username = document.getElementById("username").value;
+            const password = document.getElementById("password").value;
+
+            if (users[username] && users[username].password === password) {
+                currentUser = users[username];
+                document.getElementById("login-section").style.display = "none";
+                document.getElementById("app-section").style.display = "block";
+
+                if (currentUser.role === "admin") {
+                    document.getElementById("admin-section").style.display = "block";
+                }
+                atualizarHistorico();
+            } else {
+                alert("Usuário ou senha incorretos.");
+            }
+        }
+
+        window.logout = function() {
+            currentUser = null;
+            document.getElementById("username").value = "";
+            document.getElementById("password").value = "";
+            document.getElementById("login-section").style.display = "block";
+            document.getElementById("app-section").style.display = "none";
+        }
+
+        window.adicionarTransferencia = async function() {
+            if (currentUser && currentUser.role === "admin") {
+                const data = document.getElementById("data-transferencia").value;
+                const valor = parseFloat(document.getElementById("valor-transferencia").value);
+
+                if (!data || isNaN(valor)) {
+                    alert("Preencha todos os campos corretamente.");
+                    return;
+                }
+
+                // Adiciona ao Firestore
+                const novaTransf = { data, valor };
+                const transferenciasRef = collection(db, 'transferencias');
+                await addDoc(transferenciasRef, novaTransf);
+
+                document.getElementById("data-transferencia").value = "";
+                document.getElementById("valor-transferencia").value = "";
+            }
+        }
+
+        function atualizarHistorico() {
+            const historicoEl = document.getElementById("historico");
+            let totalPago = 0;
+
+            // Ouve mudanças no Firestore e atualiza a lista
+            const transferenciasRef = collection(db, 'transferencias');
+            onSnapshot(transferenciasRef, (snapshot) => {
+                historicoEl.innerHTML = "";
+                const transferencias = [];
+
+                snapshot.forEach((doc) => {
+                    const transf = doc.data();
+                    transferencias.push(transf); // Adiciona transferências a um array
+                    totalPago += transf.valor; // Acumula o total pago
+                });
+
+                // Ordena transferências por data
+                transferencias.sort((a, b) => {
+                    const [dayA, monthA, yearA] = a.data.split('/').map(Number);
+                    const [dayB, monthB, yearB] = b.data.split('/').map(Number);
+                    return new Date(yearA, monthA - 1, dayA) - new Date(yearB, monthB - 1, dayB);
+                });
+
+                // Atualiza a lista ordenada
+                transferencias.forEach(transf => {
+                    const li = document.createElement("li");
+                    li.classList.add("list-group-item");
+                    li.textContent = `${transf.data}: R$ ${transf.valor.toFixed(2)}`;
+                    historicoEl.appendChild(li);
+                });
+
+                // Atualiza os totais exibidos
+                document.getElementById("total-pago").textContent = totalPago.toFixed(2);
+                document.getElementById("valor-restante").textContent = (VALOR_DEVIDO - totalPago).toFixed(2);
+            });
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            if (currentUser) {
+                atualizarHistorico();
+            }
+        });
+    </script>
+</head>
+<body class="bg-light">
+
+<div id="login-section" class="container mt-5">
+    <div class="card shadow">
+        <div class="card-body">
+            <h1 class="card-title text-center">Login</h1>
+            <div class="mb-3">
+                <label for="username" class="form-label">Usuário</label>
+                <input type="text" class="form-control" id="username" placeholder="Digite seu usuário">
+            </div>
+            <div class="mb-3">
+                <label for="password" class="form-label">Senha</label>
+                <input type="password" class="form-control" id="password" placeholder="Digite sua senha">
+            </div>
+            <button onclick="login()" class="btn btn-primary w-100">Entrar</button>
+        </div>
+    </div>
+</div>
+
+<div id="app-section" class="container mt-5" style="display: none;">
+    <div class="card shadow">
+        <div class="card-body">
+            <h1 class="card-title text-center">Controle de Transferências</h1>
+            
+            <div id="admin-section" style="display: none;">
+                <div class="mb-3">
+                    <label for="data-transferencia" class="form-label">Data da Transferência</label>
+                    <input type="text" class="form-control" id="data-transferencia" placeholder="Data (dd/mm/aaaa)" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="valor-transferencia" class="form-label">Valor da Transferência</label>
+                    <input type="number" class="form-control" id="valor-transferencia" placeholder="Valor da Transferência" required>
+                </div>
+                
+                <button onclick="adicionarTransferencia()" class="btn btn-primary w-100 mb-4">Adicionar Transferência</button>
+            </div>
+
+            <h3>Histórico de Transferências</h3>
+            <ul id="historico" class="list-group mb-4"></ul>
+            <h4>Total Pago: R$ <span id="total-pago"></span></h4>
+            <h4>Valor Restante: R$ <span id="valor-restante"></span></h4>
+            
+            <button onclick="logout()" class="btn btn-danger w-100 mt-4">Sair</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
